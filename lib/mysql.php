@@ -43,6 +43,7 @@ namespace {
             if ($new !== false) {
                 trigger_error('Argument $new is no longer supported in PHP > 7', E_USER_WARNING);
             }
+
             if (null === $hostname) {
                 $hostname = ini_get('mysqli.default_host') ?: null;
             }
@@ -53,17 +54,33 @@ namespace {
                 $password = ini_get('mysqli.default_pw') ?: null;
             }
 
+            $socket = '';
+            if (strpos($hostname, ':/') === 0) {
+                // it's a unix socket
+                $socket = $hostname;
+                $hostname = 'localhost';
+            }
+
             $hash = sha1($hostname . $username . $flags);
             /* persistent connections start with p: */
-            if ($hostname{1} !== ':' && isset(\Dshafik\MySQL::$connections[$hash])) {
+            /* don't use a cached link for those */
+            if ($hostname[1] !== ':' && isset(\Dshafik\MySQL::$connections[$hash])) {
                 \Dshafik\MySQL::$last_connection = \Dshafik\MySQL::$connections[$hash]['conn'];
                 \Dshafik\MySQL::$connections[$hash]['refcount'] += 1;
                 return \Dshafik\MySQL::$connections[$hash]['conn'];
             }
 
+            /* A custom port can be specified by appending the hostname with :{port} e.g. hostname:3307 */
+            if (preg_match('/^(.+):([\d]+)$/', $hostname, $port_matches) === 1 && $port_matches[1] !== "p") {
+                $hostname = $port_matches[1];
+                $port = (int) $port_matches[2];
+            } else {
+                $port = null;
+            }
+
             /* No flags, means we can use mysqli_connect() */
             if ($flags === 0) {
-                $conn = mysqli_connect($hostname, $username, $password);
+                $conn = mysqli_connect($hostname, $username, $password, '', $port);
                 if (!$conn instanceof mysqli) {
                     return false;
                 }
@@ -84,8 +101,8 @@ namespace {
                     $username,
                     $password,
                     '',
-                    null,
-                    '',
+                    $port,
+                    $socket,
                     $flags
                 );
 
@@ -153,9 +170,9 @@ namespace {
             $link = \Dshafik\MySQL::getConnection($link);
 
             return mysqli_query(
-                    $link,
-                    'USE `' . mysqli_real_escape_string($link, $databaseName) . '`'
-                ) !== false;
+                $link,
+                'USE `' . mysqli_real_escape_string($link, $databaseName) . '`'
+            ) !== false;
         }
 
         function mysql_query($query, \mysqli $link = null)
@@ -401,7 +418,18 @@ namespace {
                 return false;
                 // @codeCoverageIgnoreEnd
             }
-            return mysqli_fetch_field($result);
+            $res = mysqli_fetch_field($result);
+            if ($res instanceof \stdClass) {
+                $res->not_null = ($res->flags & MYSQLI_NOT_NULL_FLAG) ? 1 : 0;
+                $res->primary_key = ($res->flags & MYSQLI_PRI_KEY_FLAG ) ? 1 : 0;
+                $res->unique_key = ($res->flags & MYSQLI_UNIQUE_KEY_FLAG ) ? 1 : 0;
+                $res->multiple_key = ($res->flags & MYSQLI_MULTIPLE_KEY_FLAG ) ? 1 : 0;
+                $res->numeric = ($res->flags & MYSQLI_NUM_FLAG ) ? 1 : 0;
+                $res->blob = ($res->flags & MYSQLI_BLOB_FLAG ) ? 1 : 0;
+                $res->unsigned = ($res->flags & MYSQLI_UNSIGNED_FLAG ) ? 1 : 0;
+                $res->zerofill = ($res->flags & MYSQLI_ZEROFILL_FLAG ) ? 1 : 0;
+            }
+            return $res;
         }
 
         function mysql_field_seek($result, $field)
@@ -512,7 +540,7 @@ namespace {
 
         function mysql_ping(\mysqli $link = null)
         {
-            return mysqli_ping($link);
+            return mysqli_ping(\Dshafik\MySQL::getConnection($link));
         }
 
         function mysql_get_client_info(\mysqli $link = null)
@@ -729,7 +757,7 @@ namespace Dshafik {
         {
             $escapedString = '';
             for ($i = 0, $max = strlen($unescapedString); $i < $max; $i++) {
-                $escapedString .= self::escapeChar($unescapedString{$i});
+                $escapedString .= self::escapeChar($unescapedString[$i]);
             }
 
             return $escapedString;

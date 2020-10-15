@@ -9,19 +9,14 @@
  */
 namespace Dshafik\MySQL\Tests;
 
-class MySqlShimTest extends \PHPUnit_Framework_TestCase
+class MySqlShimTest extends \PHPUnit\Framework\TestCase
 {
     /**
      * @var string MySQL Host
      */
-    protected static $host;
-
-    protected static $password = null;
-
-    /**
-     * @var string Docker container
-     */
-    protected static $container;
+    public static $host = 'localhost';
+    public static $username = 'root';
+    public static $password = null;
 
     /**
      * @var array Location of binaries
@@ -40,13 +35,26 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function __construct($name = null, array $data = array(), $dataName = '')
     {
+        if (getenv('MYSQL_HOST') !== false) {
+            static::$host = getenv('MYSQL_HOST');
+        }
+
+        if (getenv('MYSQL_USERNAME') !== false) {
+            static::$username = getenv('MYSQL_USERNAME');
+        }
+
+        if (getenv('MYSQL_PASSWORD') !== false) {
+            var_dump(getenv('MYSQL_PASSWORD'));
+            static::$password = getenv('MYSQL_PASSWORD');
+        }
+
         parent::__construct($name, $data, $dataName);
         $this->runtime = new \SebastianBergmann\Environment\Runtime();
     }
 
     public function test_mysql_connect()
     {
-        $mysql = mysql_connect(static::$host, 'root', static::$password);
+        $mysql = mysql_connect(static::$host, static::$username, static::$password);
         $this->assertConnection($mysql);
     }
 
@@ -55,20 +63,18 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
      */
     public function test_mysql_connect_defaults()
     {
-        ini_set('mysqli.default_host', '127.0.0.1');
-        ini_set('mysqli.default_user', 'root');
+        ini_set('mysqli.default_host', static::$host);
+        ini_set('mysqli.default_user', static::$username);
         ini_set('mysqli.default_pw', (static::$password === null) ? '' : static::$password);
 
         $mysql = mysql_connect();
         $this->assertConnection($mysql);
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^mysql(i?)_connect\(\): (\(HY000\/1045\): )?Access denied for user 'baduser'@'(.*?)' \(using password: YES\)$/
-     */
     public function test_mysql_connect_fail_warning()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^mysql(i?)_connect\(\): (\(HY000\/1045\): )?Access denied for user 'baduser'@'(.*?)' \(using password: YES\)$/");
         mysql_connect(static::$host, 'baduser', 'badpass');
     }
 
@@ -79,36 +85,35 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
     }
 
     /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessage Argument $new is no longer supported in PHP > 7
      * @requires PHP 7.0.0
      */
     public function test_mysql_connect_new()
     {
-        mysql_connect(static::$host, 'root', static::$password, true);
+        $this->expectWarning();
+        $this->expectWarningMessage('Argument $new is no longer supported in PHP > 7');
+        $conn1 = mysql_connect(static::$host, static::$username, static::$password, true);
+        $conn2 = mysql_connect(static::$host, static::$username, static::$password, true);
+
+        $this->assertEquals($conn1, $conn2);
     }
 
     public function test_mysql_connect_options()
     {
-        $mysql = mysql_connect(static::$host, 'root', static::$password, false, MYSQL_CLIENT_COMPRESS);
+        $mysql = mysql_connect(static::$host, static::$username, static::$password, false, MYSQL_CLIENT_COMPRESS);
         $this->assertConnection($mysql);
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^mysql((i_real)?)_connect\(\): (\(HY000\/1045\): )?Access denied for user 'baduser'@'(.*?)' \(using password: YES\)$/
-     */
     public function test_mysql_connect_options_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^mysql((i_real)?)_connect\(\): (\(HY000\/1045\): )?Access denied for user 'baduser'@'(.*?)' \(using password: YES\)$/");
         mysql_connect(static::$host, 'baduser', 'badpass', false, MYSQL_CLIENT_COMPRESS);
     }
 
     public function test_mysql_connect_multi()
     {
-        $this->skipForHHVM();
-
-        $conn = mysql_connect(static::$host, 'root', static::$password);
-        $conn2 = mysql_connect(static::$host, 'root', static::$password);
+        $conn = mysql_connect(static::$host, static::$username, static::$password);
+        $conn2 = mysql_connect(static::$host, static::$username, static::$password);
 
         $this->assertEquals($conn, $conn2);
 
@@ -125,7 +130,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_pconnect()
     {
-        $conn = mysql_pconnect(static::$host, 'root', static::$password);
+        $conn = mysql_pconnect(static::$host, static::$username, static::$password);
 
         $result = mysql_query("SELECT 'persistent'", $conn);
         $row = mysql_fetch_row($result);
@@ -152,7 +157,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_query_ddl()
     {
-        mysql_connect(static::$host, 'root', static::$password);
+        mysql_connect(static::$host, static::$username, static::$password);
         $result = mysql_query('CREATE DATABASE IF NOT EXISTS shim_test');
         $this->assertTrue($result, mysql_error());
     }
@@ -164,10 +169,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
             "INSERT INTO
                 testing (one, two, three, four, five, six, seven, eight, nine, ten, eleven)
              VALUES
-                ('1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1'),
-                ('2', '2', '2', '2', '2', '2', '2', '2', '2', '2', '2'),
-                ('3', '3', '3', '3', '3', '3', '3', '3', '3', '3', '3'),
-                ('4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4')"
+                ('1', '1', '1', '1', '1', '1', '1', '1', 'one', 'one', '1'),
+                ('2', '2', '2', '2', '2', '2', '2', '2', 'two', 'two', '2'),
+                ('3', '3', '3', '3', '3', '3', '3', '3', 'three', 'three', '3'),
+                ('4', '4', '4', '4', '4', '4', '4', '4', 'four', 'four', '4')"
         );
 
         $this->assertTrue($result, mysql_error());
@@ -176,10 +181,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
             "INSERT INTO
                 testing2 (one, two, three, four, five, six, seven, eight, nine, ten, eleven)
              VALUES
-                ('1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1'),
-                ('2', '2', '2', '2', '2', '2', '2', '2', '2', '2', '2'),
-                ('3', '3', '3', '3', '3', '3', '3', '3', '3', '3', '3'),
-                ('4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4')"
+                ('1', '1', '1', '1', '1', '1', '1', '1', 'one', 'one', '1'),
+                ('2', '2', '2', '2', '2', '2', '2', '2', 'two', 'two', '2'),
+                ('3', '3', '3', '3', '3', '3', '3', '3', 'three', 'three', '3'),
+                ('4', '4', '4', '4', '4', '4', '4', '4', 'four', 'four', '4')"
         );
 
         $this->assertTrue($result, mysql_error());
@@ -279,8 +284,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_db_query()
     {
-        $this->skipForHHVM();
-
         $this->getConnection();
         $result = mysql_db_query('shim_test', 'SELECT DATABASE()');
         $this->assertResult($result);
@@ -294,8 +297,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_db_query_fail()
     {
-        $this->skipForHHVM();
-
         $this->getConnection();
         $result = mysql_db_query('nonexistent', 'SELECT DATABASE()');
         $this->assertFalse($result);
@@ -308,7 +309,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
             "INSERT INTO
                 testing (id, one, two, three, four, five, six, seven, eight, nine, ten, eleven)
              VALUES
-                (5, '5', '5', '5', '5', '5', '5', '5', '5', '5', '5', '5')"
+                (5, '5', '5', '5', '5', '5', '5', '5', 'five', '5', '5', '5')"
         );
         $this->assertTrue($result);
         $this->assertEquals(5, mysql_insert_id());
@@ -340,8 +341,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
      */
     public function test_mysql_list_tables_fail()
     {
-        $this->skipForHHVM();
-
         $this->getConnection();
         $result = mysql_list_tables('nonexistent');
         $this->assertFalse($result);
@@ -366,8 +365,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
      */
     public function test_mysql_list_fields()
     {
-        $this->skipForHHVM();
-
         $mysql = $this->getConnection();
 
         $result = mysql_list_fields('shim_test', 'testing', $mysql);
@@ -398,8 +395,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
      */
     public function test_mysql_list_fields_specialchars()
     {
-        $this->skipForHHVM();
-
         $this->getConnection('shim-test');
 
         mysql_query(
@@ -450,15 +445,11 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_list_fields_fail()
     {
-        $this->skipForHHVM();
+        $this->expectWarning();
+        $this->expectWarningMessage("mysql_list_fields(): Unable to save MySQL query result");
 
-        try {
-            $this->getConnection();
-            mysql_list_fields('shim_test', 'nonexistent');
-        } catch (\Exception $e) {
-            $this->assertInstanceOf('\PHPUnit_Framework_Error_Warning', $e);
-            $this->assertEquals('mysql_list_fields(): Unable to save MySQL query result', $e->getMessage());
-        }
+        $this->getConnection();
+        mysql_list_fields('shim_test', 'nonexistent');
     }
 
     public function test_mysql_field()
@@ -529,7 +520,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('testing', mysql_field_table($result, 10));
         $this->assertEquals('ten', mysql_field_name($result, 10));
         $this->assertEquals('string', mysql_field_type($result, 10));
-        $this->assertEquals(26, mysql_field_len($result, 10));
+        $this->assertEquals(35, mysql_field_len($result, 10));
         $this->assertEquals('set', mysql_field_flags($result, 10));
 
         $this->assertEquals('testing', mysql_field_table($result, 11));
@@ -542,7 +533,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
     public function test_mysql_field_utf8()
     {
         $this->getConnection('shim_test_utf8', 'utf8');
-        $result = mysql_query('SELECT * FROM testing LIMIT 1');
+        $result = mysql_query("SELECT * FROM testing WHERE one = 'one' LIMIT 1");
 
         $this->assertEquals('testing', mysql_field_table($result, 0));
         $this->assertEquals('id', mysql_field_name($result, 0));
@@ -607,7 +598,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('testing', mysql_field_table($result, 10));
         $this->assertEquals('ten', mysql_field_name($result, 10));
         $this->assertEquals('string', mysql_field_type($result, 10));
-        $this->assertEquals(26*3, mysql_field_len($result, 10));
+        $this->assertEquals(35*3, mysql_field_len($result, 10));
         $this->assertEquals('set', mysql_field_flags($result, 10));
 
         $this->assertEquals('testing', mysql_field_table($result, 11));
@@ -617,60 +608,51 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('blob', mysql_field_flags($result, 11));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_field_name\(\): )?Field 999 is invalid for MySQL result index .*$/
-     */
     public function test_mysql_field_name_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_field_name\(\): )?Field 999 is invalid for MySQL result index .*$/");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT * FROM testing LIMIT 1');
 
         $this->assertEquals('testing', mysql_field_name($result, 999));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_field_table\(\): )?Field 999 is invalid for MySQL result index .*$/
-     */
     public function test_mysql_field_table_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_field_table\(\): )?Field 999 is invalid for MySQL result index .*$/");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT * FROM testing LIMIT 1');
 
         $this->assertEquals('testing', mysql_field_table($result, 999));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_field_type\(\): )?Field 999 is invalid for MySQL result index .*$/
-     */
     public function test_mysql_field_type_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_field_type\(\): )?Field 999 is invalid for MySQL result index .*$/");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT * FROM testing LIMIT 1');
 
         $this->assertEquals('testing', mysql_field_type($result, 999));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_field_len\(\): )?Field 999 is invalid for MySQL result index .*$/
-     */
     public function test_mysql_field_len_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_field_len\(\): )?Field 999 is invalid for MySQL result index .*$/");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT * FROM testing LIMIT 1');
 
         $this->assertEquals('testing', mysql_field_len($result, 999));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_field_flags\(\): )?Field 999 is invalid for MySQL result index .*$/
-     */
     public function test_mysql_field_flags_fail()
     {
+
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_field_flags\(\): )?Field 999 is invalid for MySQL result index .*$/");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT * FROM testing LIMIT 1');
 
@@ -686,12 +668,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(2, mysql_num_fields($result));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^mysql_num_fields\(\) expects parameter 1 to be resource, boolean given$/
-     */
     public function test_mysql_num_fields_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessage("mysql_num_fields() expects parameter 1 to be resource, boolean given");
         $this->getConnection('shim_test');
         $result = mysql_query('SELECT one, two FROM nonexistent');
 
@@ -701,20 +681,16 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
     /**
      * @dataProvider mysql_function_invalid_result_DataProvider
      */
-    public function test_mysql_function_invalid_result($function, $error, $args, $skipHHVM = false)
+    public function test_mysql_function_invalid_result($function, $error, $args)
     {
-        $this->skipForHHVM($skipHHVM);
+        $this->expectWarning();
+        $this->expectWarningMessageMatches('@' .$error. '@');
 
-        try {
-            if ($args !== array()) {
-                array_unshift($args, null);
-                call_user_func_array($function, $args);
-            }
-            call_user_func($function, null);
-        } catch (\Exception $e) {
-            $this->assertInstanceOf('\PHPUnit_Framework_Error_Warning', $e);
-            $this->assertRegExp('@' . $error . '@', $e->getMessage());
+        if ($args !== array()) {
+            array_unshift($args, null);
+            call_user_func_array($function, $args);
         }
+        call_user_func($function, null);
     }
 
     /**
@@ -794,12 +770,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         }
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_result\(\): )?three not found in MySQL result index (.*?)$/
-     */
     public function test_mysql_result_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_result\(\): )?three not found in MySQL result index (.*?)$/");
         $this->getConnection();
 
         $result = mysql_query('SELECT one, two FROM testing LIMIT 1');
@@ -819,12 +793,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals(1, mysql_result($result, 0, 'testing.two'));
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_result\(\): )?testing.three not found in MySQL result index (.*?)$/
-     */
     public function test_mysql_result_prefixed_fail()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_result\(\): )?testing.three not found in MySQL result index (.*?)$/");
         $this->getConnection();
 
         $result = mysql_query('SELECT one, two FROM testing LIMIT 1');
@@ -833,12 +805,10 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         mysql_result($result, 0, 'testing.three');
     }
 
-    /**
-     * @expectedException \PHPUnit_Framework_Error_Warning
-     * @expectedExceptionMessageRegExp /^(mysql_result\(\): )?Unable to jump to row 1 on MySQL result index (.*?)$/
-     */
     public function test_mysql_result_invalid_row()
     {
+        $this->expectWarning();
+        $this->expectWarningMessageMatches("/^(mysql_result\(\): )?Unable to jump to row 1 on MySQL result index (.*?)$/");
         $this->getConnection();
 
         $result = mysql_query('SELECT one FROM testing LIMIT 1');
@@ -863,20 +833,16 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     public function test_mysql_close()
     {
-        mysql_connect(static::$host, 'root', static::$password);
+        mysql_connect(static::$host, static::$username, static::$password);
         $this->assertTrue(mysql_close());
     }
 
     public function test_mysql_close_fail()
     {
-        $this->skipForHHVM();
+        $this->expectWarning();
+        $this->expectWarningMessage("mysql_close(): no MySQL-Link resource supplied");
 
-        try {
-            mysql_close();
-        } catch (\Exception $e) {
-            $this->assertInstanceOf('\PHPUnit_Framework_Error_Warning', $e);
-            $this->assertEquals('mysql_close(): no MySQL-Link resource supplied', $e->getMessage());
-        }
+        mysql_close();
     }
 
     public function test_mysql_error()
@@ -914,11 +880,11 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
     /**
      * @requires PHP 7.0.0
-     * @expectedException \PHPUnit_Framework_Error_Notice
-     * @expectedExceptionMessage mysql_escape_string() is insecure; use mysql_real_escape_string() instead!
      */
     public function test_mysql_escape_string_notice()
     {
+        $this->expectNotice();
+        $this->expectNoticeMessage("mysql_escape_string() is insecure; use mysql_real_escape_string() instead!");
         mysql_escape_string("'\0\032\r\n\"\\");
     }
 
@@ -935,11 +901,11 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
 
         $this->assertTrue(mysql_select_db('shim-test'));
     }
-    
+
     public function test_mysql_select_db_invalid()
     {
         $this->getConnection();
-        
+
         $this->assertFalse(mysql_select_db('nonexistent'));
     }
 
@@ -950,76 +916,134 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
         $this->assertEquals('information_schema', mysql_db_name($dbs, 0));
     }
 
-    public function tearDown()
+    public function test_mysql_fetch_field()
+    {
+        $this->getConnection();
+
+        $result = mysql_query(
+            "INSERT INTO
+                testing (one, two, three, four, five, six, seven, eight, nine, ten, eleven)
+             VALUES
+                ('six', '6', '6', '6', '6', '6', '6', '6', 'six', 'six', '6')"
+        );
+        $this->assertTrue($result);
+
+        $result = mysql_query("SELECT * FROM testing WHERE one = 'six' LIMIT 1");
+        $this->assertNotFalse($result);
+
+        $map = [
+            0 => [
+                'name' => 'id', 'max_length' => 1, 'not_null' => 1, 'primary_key' => 1,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 1, 'blob' => 0,
+                'type' => MYSQLI_TYPE_LONG, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            1 => [
+                'name' => 'one', 'max_length' => 3, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 1, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            2 => [
+                'name' => 'two', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 1, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            3 => [
+                'name' => 'three', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 1, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            4 => [
+                'name' => 'four', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 1, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            5 => [
+                'name' => 'five', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            6 => [
+                'name' => 'six', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            7 => [
+                'name' => 'seven', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 1, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            8 => [
+                'name' => 'eight', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_VAR_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            9 => [
+                'name' => 'nine', 'max_length' => 3, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            10 => [
+                'name' => 'ten', 'max_length' => 3, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 0,
+                'type' => MYSQLI_TYPE_STRING, 'unsigned' => 0, 'zerofill' => 0
+            ],
+            11 => [
+                'name' => 'eleven', 'max_length' => 1, 'not_null' => 0, 'primary_key' => 0,
+                'unique_key' => 0, 'multiple_key' => 0, 'numeric' => 0, 'blob' => 1,
+                'type' => MYSQLI_TYPE_BLOB, 'unsigned' => 0, 'zerofill' => 0
+            ],
+        ];
+
+        foreach ($map as $index => $values) {
+            $field = mysql_fetch_field($result, $index);
+            $this->assertInstanceOf(\stdClass::class, $field);
+
+            foreach ($values as $key => $value) {
+                $this->assertEquals($field->{$key}, $value, "Field '$index:$key' doesn't match.  Expected: $value, Actual: {$field->{$key}}");
+            }
+        }
+    }
+
+    public function test_mysql_fetch_field_fail_false()
+    {
+        $this->expectWarning();
+        $this->expectWarningMessage("mysql_fetch_field() expects parameter 1 to be resource, boolean given");
+
+        $this->getConnection();
+        mysql_fetch_field(false, 1);
+    }
+
+    public function test_mysql_fetch_field_fail_invalid()
+    {
+        // $this->expectWarning();
+        // $this->expectWarningMessage("mysql_fetch_field() expects parameter 1 to be resource, boolean given");
+
+        $this->getConnection();
+
+        $result = mysql_query(
+            "INSERT INTO
+                testing (one, two, three, four, five, six, seven, eight, nine, ten, eleven)
+             VALUES
+                ('six', '6', '6', '6', '6', '6', '6', '6', 'six', 'six', '6')"
+        );
+
+        $result = mysql_query("SELECT * FROM testing WHERE one = 'six' LIMIT 1");
+        $this->assertNotFalse($result);
+        
+        for ($i = 0; $i <= 12; $i++) {
+            $field = mysql_fetch_field($result, $i);
+        }
+        $this->assertFalse($field);
+    }
+
+    public function tearDown(): void
     {
         @mysql_close();
     }
 
-    public static function setUpBeforeClass()
+    public static function tearDownAfterClass(): void
     {
-        error_reporting(E_ALL & ~E_DEPRECATED);
-        if (getenv('TRAVIS') === false && getenv('APPVEYOR') === false) {
-            fwrite(STDERR, "=> Finding binaries\n");
-            static::$bin['docker'] = $docker = exec('/usr/bin/env which docker');
-            if (empty($docker)) {
-                static::markTestSkipped('Docker is required to run these tests');
-            }
-
-            fwrite(STDERR, '=> Running Docker Container: ');
-            static::$container = exec($docker . ' run -e MYSQL_ALLOW_EMPTY_PASSWORD=1 -P -d  mysql/mysql-server:5.7');
-
-            if (empty(static::$container)) {
-                static::markTestSkipped('Unable to start docker container');
-            }
-
-            fwrite(STDERR, static::$container . "\n");
-
-            fwrite(STDERR, '=> Finding MySQL Host: ');
-            static::$host = exec($docker . ' port ' . self::$container . ' 3306');
-            fwrite(STDERR, static::$host . "\n");
-
-            fwrite(STDERR, '=> Waiting on mysqld to start:');
-            $out = '';
-            while (trim($out) !== 'mysqld') {
-                $out = exec(static::$bin['docker'] . ' exec ' . static::$container . ' ps ax | awk \'/mysqld/ {print $NF}\'');
-            }
-            fwrite(STDERR, " started\n");
-            sleep(3);
-
-            fwrite(STDERR, "=> Docker Container Running\n\n");
-
-            return;
-        }
-
-
-        static::$host = '0.0.0.0';
-        if (getenv('APPVEYOR') !== false) {
-            static::$host = '127.0.0.1';
-            static::$password = 'Password12!';
-        }
-    }
-
-    public static function tearDownAfterClass()
-    {
-        if (getenv('TRAVIS') === false && getenv('APPVEYOR') === false) {
-            fwrite(STDERR, "\n\nStopping Docker Container: ");
-            $output = exec(static::$bin['docker'] . ' stop ' . static::$container);
-            if (trim($output) !== static::$container) {
-                fwrite(STDERR, " Failed to stop container!\n");
-                return;
-            }
-
-            $output = exec(static::$bin['docker'] . ' rm ' . static::$container);
-            if (trim($output) !== static::$container) {
-                fwrite(STDERR, " Failed to remove container!\n");
-                return;
-            }
-            fwrite(STDERR, "Done\n");
-
-            return;
-        }
-
-        mysql_connect(static::$host, 'root', static::$password);
+        mysql_connect(static::$host, static::$username, static::$password);
         foreach (self::$dbs as $db) {
             mysql_query("DROP DATABASE IF EXISTS `$db`");
         }
@@ -1126,7 +1150,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
                 'function' => 'mysql_fetch_row',
                 'message' => "mysql_fetch_row\(\) expects parameter 1 to be resource, (null|NULL) given",
                 'args' => array(),
-                'skipHHVM' => true
             ),
             array(
                 'function' => 'mysql_fetch_array',
@@ -1137,7 +1160,6 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
                 'function' => 'mysql_fetch_assoc',
                 'message' => "mysql_fetch_assoc\(\) expects parameter 1 to be resource, (null|NULL) given",
                 'args' => array(),
-                'skipHHVM' => true
             ),
             array(
                 'function' => 'mysql_fetch_object',
@@ -1198,14 +1220,11 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
                 'function' => 'mysql_db_name',
                 'message' => "mysql_db_name\(\) expects parameter 1 to be resource, (null|NULL) given",
                 'args' => array(0),
-                'skipHHVM' => true
             ),
             array(
                 'function' => 'mysql_tablename',
                 'message' => "mysql_tablename\(\) expects parameter 1 to be resource, (null|NULL) given",
-                'args' => array(0),
-                'skipHHVM' => true
-            ),
+                'args' => array(0),            ),
         );
     }
 
@@ -1225,7 +1244,7 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
     {
         self::$dbs[$db] = $db;
 
-        $mysql = mysql_connect(static::$host, 'root', static::$password);
+        $mysql = mysql_connect(static::$host, static::$username, static::$password);
         $this->assertConnection($mysql);
 
         mysql_query('SET NAMES ' . $encoding);
@@ -1245,8 +1264,8 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
                 six varchar(255),
                 seven varchar(255),
                 eight varchar(255),
-                nine ENUM('one', 'two', '\'three', 'three', 'four'),
-                ten SET('one', 'two', '\'\'three', 'three', 'four'),
+                nine ENUM('one', 'two', '\'three', 'three', 'four', 'five', 'six'),
+                ten SET('one', 'two', '\'\'three', 'three', 'four', 'five', 'six'),
                 eleven MEDIUMTEXT,
                 INDEX one_idx (one),
                 UNIQUE INDEX two_unq (two),
@@ -1300,12 +1319,5 @@ class MySqlShimTest extends \PHPUnit_Framework_TestCase
             $mysql instanceof \mysqli,
             'Not a valid MySQL connection'
         );
-    }
-
-    protected function skipForHHVM($condition = true)
-    {
-        if ($this->runtime->isHHVM() && $condition) {
-            $this->markTestSkipped('HHVM Behavior differs from PHP');
-        }
     }
 }
